@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 import { MarkerData, MarkerImage } from '../types';
 
 interface MarkersContextType {
@@ -16,30 +16,42 @@ export const MarkersProvider = ({ children }: { children: ReactNode }) => {
   const [markers, setMarkers] = useState<MarkerData[]>([]);
   const [images, setImages] = useState<Record<string, MarkerImage[]>>({});
 
-  const addMarker = (marker: MarkerData) =>
+  const addMarker = useCallback((marker: MarkerData) => {
     setMarkers((prev) => [...prev, marker]);
+  }, []);
 
-  const addImageToMarker = (markerId: string, image: MarkerImage) =>
+  const addImageToMarker = useCallback((markerId: string, image: MarkerImage) => {
     setImages((prev) => ({
       ...prev,
       [markerId]: [...(prev[markerId] ?? []), image],
     }));
+  }, []);
 
-  const removeImageFromMarker = (markerId: string, imageUri: string) =>
+  const removeImageFromMarker = useCallback((markerId: string, imageUri: string) => {
     setImages((prev) => ({
       ...prev,
       [markerId]: (prev[markerId] ?? []).filter((img) => img.uri !== imageUri),
     }));
+  }, []);
 
-  const getImagesForMarker = (markerId: string) => images[markerId] ?? [];
-
-  return (
-    <MarkersContext.Provider
-      value={{ markers, images, addMarker, addImageToMarker, removeImageFromMarker, getImagesForMarker }}
-    >
-      {children}
-    </MarkersContext.Provider>
+  const getImagesForMarker = useCallback(
+    (markerId: string) => images[markerId] ?? [],
+    [images]
   );
+
+  const value = useMemo(
+    () => ({
+      markers,
+      images,
+      addMarker,
+      addImageToMarker,
+      removeImageFromMarker,
+      getImagesForMarker,
+    }),
+    [markers, images, addMarker, addImageToMarker, removeImageFromMarker, getImagesForMarker]
+  );
+
+  return <MarkersContext.Provider value={value}>{children}</MarkersContext.Provider>;
 };
 
 export const useMarkers = () => {

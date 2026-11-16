@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { MarkerData } from '../types';
 import { serializeMarkers } from './MarkerList';
@@ -16,6 +16,7 @@ export const Map = ({ markers, initialRegion, onLongPress, onMarkerPress }: MapP
   const webRef = useRef<WebView>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mapKey, setMapKey] = useState(0);
 
   const [html] = useState(() =>
     buildLeafletHtml(initialRegion.latitude, initialRegion.longitude, 13)
@@ -23,16 +24,30 @@ export const Map = ({ markers, initialRegion, onLongPress, onMarkerPress }: MapP
 
   useEffect(() => {
     if (!ready || !webRef.current) return;
-    const payload = serializeMarkers(markers);
-    webRef.current.injectJavaScript(
-      `window.setMarkers(${JSON.stringify(payload)}); true;`
-    );
+    try {
+      const payload = serializeMarkers(markers);
+      webRef.current.injectJavaScript(
+        `window.setMarkers(${JSON.stringify(payload)}); true;`
+      );
+    } catch (e) {
+      console.error('injectJavaScript failed:', e);
+      setError('Не удалось обновить маркеры на карте.');
+    }
   }, [markers, ready]);
+
+  const handleRetry = useCallback(() => {
+    setError(null);
+    setReady(false);
+    setMapKey((k) => k + 1);
+  }, []);
 
   if (error) {
     return (
       <View style={styles.center}>
-        <Text>{error}</Text>
+        <Text style={styles.errorText}>{error}</Text>
+        <Pressable onPress={handleRetry} style={styles.retryBtn}>
+          <Text style={styles.retryText}>Повторить</Text>
+        </Pressable>
       </View>
     );
   }
@@ -40,6 +55,7 @@ export const Map = ({ markers, initialRegion, onLongPress, onMarkerPress }: MapP
   return (
     <View style={styles.container}>
       <WebView
+        key={mapKey}
         ref={webRef}
         style={styles.web}
         originWhitelist={['*']}
@@ -62,7 +78,6 @@ export const Map = ({ markers, initialRegion, onLongPress, onMarkerPress }: MapP
             else if (msg.type === 'longPress') onLongPress(msg.payload);
             else if (msg.type === 'markerPress') onMarkerPress(msg.payload.id);
           } catch {
-            // игнорируем невалидные сообщения
           }
         }}
       />
@@ -73,7 +88,10 @@ export const Map = ({ markers, initialRegion, onLongPress, onMarkerPress }: MapP
 const styles = StyleSheet.create({
   container: { flex: 1 },
   web: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, gap: 12 },
+  errorText: { fontSize: 16, textAlign: 'center' },
+  retryBtn: { paddingVertical: 8, paddingHorizontal: 16, backgroundColor: '#208AEF', borderRadius: 8 },
+  retryText: { color: '#fff', fontWeight: '600' },
   loader: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',

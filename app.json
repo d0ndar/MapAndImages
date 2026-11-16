@@ -33,7 +33,13 @@
           "imageWidth": 76
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Приложению нужен доступ к галерее, чтобы прикреплять изображения к маркерам на карте."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

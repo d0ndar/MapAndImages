@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useMarkers } from '../../context/MarkersContext';
@@ -14,16 +14,20 @@ export default function MarkerDetailsScreen() {
   const marker = markers.find((m) => m.id === id);
   const images = getImagesForMarker(id);
 
-  if (!marker) {
-    return (
-      <View style={styles.container}>
-        <Text>Маркер не найден.</Text>
-        <Button title="Назад к карте" onPress={() => router.back()} />
-      </View>
-    );
-  }
+  const goBack = useCallback(() => {
+    try {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/');
+      }
+    } catch (error) {
+      console.error('router.back failed:', error);
+      Alert.alert('Ошибка навигации', 'Не удалось вернуться к карте.');
+    }
+  }, [router]);
 
-  const pickImage = async () => {
+  const pickImage = useCallback(async () => {
     setIsPicking(true);
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -39,29 +43,48 @@ export default function MarkerDetailsScreen() {
       if (!result.canceled && result.assets?.length) {
         addImageToMarker(id, result.assets[0]);
       }
-    } catch {
+    } catch (error) {
+      console.error('ImagePicker failed:', error);
       Alert.alert('Ошибка', 'Не удалось выбрать изображение.');
     } finally {
       setIsPicking(false);
     }
-  };
+  }, [id, addImageToMarker]);
 
-  const handleDelete = (uri: string) => {
-    const doDelete = () => removeImageFromMarker(id, uri);
+  const handleDelete = useCallback(
+    (uri: string) => {
+      const doDelete = () => {
+        try {
+          removeImageFromMarker(id, uri);
+        } catch (error) {
+          console.error('removeImageFromMarker failed:', error);
+          Alert.alert('Ошибка', 'Не удалось удалить изображение.');
+        }
+      };
 
-    if (Platform.OS === 'web') {
-      // Alert.alert в RN Web не поддерживает кнопки с onPress
-      if (window.confirm('Удалить изображение?')) {
-        doDelete();
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined' && window.confirm('Удалить изображение?')) {
+          doDelete();
+        }
+        return;
       }
-      return;
-    }
-  
-    Alert.alert('Удалить изображение', 'Вы уверены?', [
-      { text: 'Отмена', style: 'cancel' },
-      { text: 'Удалить', style: 'destructive', onPress: doDelete },
-    ]);
-  };
+
+      Alert.alert('Удалить изображение', 'Вы уверены?', [
+        { text: 'Отмена', style: 'cancel' },
+        { text: 'Удалить', style: 'destructive', onPress: doDelete },
+      ]);
+    },
+    [id, removeImageFromMarker]
+  );
+
+  if (!marker) {
+    return (
+      <View style={styles.container}>
+        <Text>Маркер не найден.</Text>
+        <Button title="Назад к карте" onPress={goBack} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -80,7 +103,7 @@ export default function MarkerDetailsScreen() {
           onPress={pickImage}
           disabled={isPicking}
         />
-        <Button title="Назад к карте" onPress={() => router.back()} />
+        <Button title="Назад к карте" onPress={goBack} />
       </View>
     </View>
   );

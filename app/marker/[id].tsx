@@ -1,33 +1,62 @@
 import { useCallback, useState } from 'react';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { useMarkers } from '../../context/MarkersContext';
+import { useDatabase } from '../../context/DatabaseContext';
 import { ImageList } from '../../components/ImageList';
-import { View, Text, Button, Alert, StyleSheet, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  Button,
+  Alert,
+  StyleSheet,
+  Platform,
+  ActivityIndicator,
+} from 'react-native';
+import { MarkerImageRow } from '../../types';
 
 export default function MarkerDetailsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{ id: string }>();
+  const markerId = Number(params.id);
   const router = useRouter();
-  const { markers, addImageToMarker, removeImageFromMarker, getImagesForMarker } = useMarkers();
-  const [isPicking, setIsPicking] = useState(false);
+  const { addImage, deleteImage, getMarkerImages } = useDatabase();
 
-  const marker = markers.find((m) => m.id === id);
-  const images = getImagesForMarker(id);
+  const [images, setImages] = useState<MarkerImageRow[]>([]);
+  const [isPicking, setIsPicking] = useState(false);
+  const [isLoadingImages, setIsLoadingImages] = useState(true);
+
+  const loadImages = useCallback(async () => {
+    if (!Number.isFinite(markerId)) return;
+    setIsLoadingImages(true);
+    try {
+      const rows = await getMarkerImages(markerId);
+      setImages(rows);
+    } catch (e) {
+      Alert.alert(
+        'Ошибка',
+        e instanceof Error ? e.message : 'Не удалось загрузить изображения.'
+      );
+    } finally {
+      setIsLoadingImages(false);
+    }
+  }, [markerId, getMarkerImages]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadImages();
+    }, [loadImages])
+  );
 
   const goBack = useCallback(() => {
     try {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace('/');
-      }
-    } catch (error) {
-      console.error('router.back failed:', error);
+      if (router.canGoBack()) router.back();
+      else router.replace('/');
+    } catch {
       Alert.alert('Ошибка навигации', 'Не удалось вернуться к карте.');
     }
   }, [router]);
 
   const pickImage = useCallback(async () => {
+    if (isPicking) return;
     setIsPicking(true);
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -41,46 +70,59 @@ export default function MarkerDetailsScreen() {
         quality: 0.7,
       });
       if (!result.canceled && result.assets?.length) {
-        addImageToMarker(id, result.assets[0]);
+        await addImage(markerId, result.assets[0].uri);
+        await loadImages();
       }
-    } catch (error) {
-      console.error('ImagePicker failed:', error);
-      Alert.alert('Ошибка', 'Не удалось выбрать изображение.');
+    } catch (e) {
+      Alert.alert(
+        'Ошибка',
+        e instanceof Error ? e.message : 'Не удалось выбрать изображение.'
+      );
     } finally {
       setIsPicking(false);
     }
-  }, [id, addImageToMarker]);
+  }, [addImage, isPicking, loadImages, markerId]);
 
   const handleDelete = useCallback(
-    (uri: string) => {
-      const doDelete = () => {
+    (imageId: number) => {
+      const doDelete = async () => {
         try {
-          removeImageFromMarker(id, uri);
-        } catch (error) {
-          console.error('removeImageFromMarker failed:', error);
-          Alert.alert('Ошибка', 'Не удалось удалить изображение.');
+          await deleteImage(imageId);
+          await loadImages();
+        } catch (e) {
+          Alert.alert(
+            'Ошибка',
+            e instanceof Error ? e.message : 'Не удалось удалить изображение.'
+          );
         }
       };
 
       if (Platform.OS === 'web') {
-        if (typeof window !== 'undefined' && window.confirm('Удалить изображение?')) {
-          doDelete();
+        if (
+          typeof window !== 'undefined' &&
+          window.confirm('Удалить изображение?')
+        ) {
+          void doDelete();
         }
         return;
       }
 
       Alert.alert('Удалить изображение', 'Вы уверены?', [
         { text: 'Отмена', style: 'cancel' },
-        { text: 'Удалить', style: 'destructive', onPress: doDelete },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: () => void doDelete(),
+        },
       ]);
     },
-    [id, removeImageFromMarker]
+    [deleteImage, loadImages]
   );
 
-  if (!marker) {
+  if (!Number.isFinite(markerId)) {
     return (
       <View style={styles.container}>
-        <Text>Маркер не найден.</Text>
+        <Text>Некорректный идентификатор маркера.</Text>
         <Button title="Назад к карте" onPress={goBack} />
       </View>
     );
@@ -89,13 +131,14 @@ export default function MarkerDetailsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.info}>
-        <Text style={styles.title}>{marker.title ?? 'Без названия'}</Text>
-        <Text>Широта: {marker.coordinate.latitude.toFixed(6)}</Text>
-        <Text>Долгота: {marker.coordinate.longitude.toFixed(6)}</Text>
-        {marker.description ? <Text style={styles.desc}>{marker.description}</Text> : null}
+        <Text style={styles.title}>Маркер #{markerId}</Text>
       </View>
 
-      <ImageList images={images} onDelete={handleDelete} />
+      {isLoadingImages ? (
+        <ActivityIndicator />
+      ) : (
+        <ImageList images={images} onDelete={handleDelete} />
+      )}
 
       <View style={styles.buttons}>
         <Button
@@ -111,8 +154,12 @@ export default function MarkerDetailsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
-  info: { marginBottom: 16, padding: 12, backgroundColor: '#f0f0f0', borderRadius: 8 },
-  title: { fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
-  desc: { marginTop: 8, fontStyle: 'italic' },
+  info: {
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+  },
+  title: { fontSize: 20, fontWeight: 'bold' },
   buttons: { marginTop: 'auto', gap: 8 },
 });

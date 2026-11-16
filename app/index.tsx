@@ -1,60 +1,127 @@
-import { useCallback } from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  Text,
+  Pressable,
+} from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Map } from '../components/Map';
-import { useMarkers } from '../context/MarkersContext';
+import { useDatabase } from '../context/DatabaseContext';
+import { MarkerRow } from '../types';
 
 const INITIAL_REGION = { latitude: 55.751244, longitude: 37.618423 };
 
 export default function MapScreen() {
   const router = useRouter();
-  const { markers, addMarker } = useMarkers();
+  const { isReady, isLoading, error, retryInit, addMarker, getMarkers } =
+    useDatabase();
+  const [markers, setMarkers] = useState<MarkerRow[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const loadMarkers = useCallback(async () => {
+    try {
+      const rows = await getMarkers();
+      setMarkers(rows);
+    } catch (e) {
+      Alert.alert(
+        'Ошибка',
+        e instanceof Error ? e.message : 'Не удалось загрузить маркеры.'
+      );
+    }
+  }, [getMarkers]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isReady) void loadMarkers();
+    }, [isReady, loadMarkers])
+  );
 
   const handleLongPress = useCallback(
-    (coord: { latitude: number; longitude: number }) => {
+    async (coord: { latitude: number; longitude: number }) => {
+      if (busy) return;
+      setBusy(true);
       try {
-        addMarker({
-          id: Date.now().toString(),
-          coordinate: coord,
-          title: `Место ${markers.length + 1}`,
-        });
-      } catch (error) {
-        console.error('addMarker failed:', error);
-        Alert.alert('Ошибка', 'Не удалось добавить маркер.');
+        await addMarker(coord.latitude, coord.longitude);
+        await loadMarkers();
+      } catch (e) {
+        Alert.alert(
+          'Ошибка',
+          e instanceof Error ? e.message : 'Не удалось добавить маркер.'
+        );
+      } finally {
+        setBusy(false);
       }
     },
-    [addMarker, markers.length]
+    [addMarker, busy, loadMarkers]
   );
 
   const handleMarkerPress = useCallback(
     (id: string) => {
-      const exists = markers.some((m) => m.id === id);
-      if (!exists) {
-        Alert.alert('Ошибка', 'Маркер не найден.');
-        return;
-      }
       try {
         router.push(`/marker/${id}`);
-      } catch (error) {
-        console.error('Navigation error:', error);
-        Alert.alert('Ошибка навигации', 'Не удалось открыть экран деталей маркера.');
+      } catch {
+        Alert.alert('Ошибка навигации', 'Не удалось открыть экран деталей.');
       }
     },
-    [markers, router]
+    [router]
   );
+
+  if (isLoading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+        <Text>Инициализация базы данных…</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.center}>
+        <Text>Не удалось открыть базу данных: {error.message}</Text>
+        <Pressable onPress={retryInit} style={styles.retryBtn}>
+          <Text style={styles.retryText}>Повторить</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <Map
-        markers={markers}
+        markers={markers.map((m) => ({
+          id: String(m.id),
+          coordinate: { latitude: m.latitude, longitude: m.longitude },
+          title: `Маркер #${m.id}`,
+        }))}
         initialRegion={INITIAL_REGION}
         onLongPress={handleLongPress}
         onMarkerPress={handleMarkerPress}
       />
+      {busy && <ActivityIndicator style={styles.overlay} />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 20,
+  },
+  retryBtn: {
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#208AEF',
+    borderRadius: 8,
+  },
+  retryText: { color: '#fff', fontWeight: '600' },
+  overlay: { position: 'absolute', top: 12, alignSelf: 'center' },
 });

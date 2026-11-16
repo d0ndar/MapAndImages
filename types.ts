@@ -10,3 +10,17 @@ export interface MarkerData {
 export interface MarkerImage extends ImagePickerAsset {}
 
 export type MarkerDetailsRouteParams = { id: string };
+
+export interface MarkerRow {
+  id: number;
+  latitude: number;
+  longitude: number;
+  created_at: string;
+}
+
+export interface MarkerImageRow {
+  id: number;
+  marker_id: number;
+  uri: string;
+  created_at: string;
+}

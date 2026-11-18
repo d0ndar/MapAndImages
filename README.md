@@ -1,23 +1,14 @@
-# MapAndImages — React Native приложение с картой и изображениями
+## Схема базы данных (Задание 2)
 
-## Описание
+- `markers` — `id`, `latitude`, `longitude`, `created_at`
+- `marker_images` — `id`, `marker_id` (FK → markers.id, ON DELETE CASCADE), `uri`, `created_at`
+- Индекс `idx_marker_images_marker_id` по `marker_id`
+- Версионирование через `PRAGMA user_version`, миграции в `database/migrations/`
 
-Мобильное приложение на React Native + Expo:
-- полноэкранная карта;
-- добавление маркеров долгим нажатием;
-- экран деталей маркера с координатами;
-- прикрепление изображений из галереи;
-- удаление изображений.
+## Обработка ошибок
 
-## Стек
-
-- Expo SDK 57, React Native 0.86, TypeScript (strict)
-- Expo Router (файловая маршрутизация)
-- Leaflet + OpenStreetMap (WebView на native, iframe на web)
-- expo-image-picker
-
-## Установка и запуск
-
-```bash
-npm install
-npx expo start
+- Инициализация БД — `try/catch` в `initDatabase`, статус `error` и `retryInit` в контексте
+- Транзакции — `withTransactionAsync` для миграций и удаления маркера
+- Ограничения — проверка `changes === 0` при удалении
+- `PRAGMA foreign_keys = ON` при каждом открытии соединения
+- Логирование операций в `__DEV__`

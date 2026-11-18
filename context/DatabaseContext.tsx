@@ -1,13 +1,15 @@
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
-  ReactNode,
+  type ReactNode,
 } from 'react';
 import * as SQLite from 'expo-sqlite';
+
 import { initDatabase } from '../database/schema';
 import {
   createMarker,
@@ -17,20 +19,20 @@ import {
   deleteMarkerImageById,
   fetchImagesForMarker,
 } from '../database/operations';
-import { MarkerRow, MarkerImageRow } from '../types';
+import type { Marker, MarkerImage } from '../types';
+import { persistImage, removePersistedImage } from '../utils/imageStorage';
 
 interface DatabaseContextType {
   addMarker: (latitude: number, longitude: number) => Promise<number>;
   deleteMarker: (id: number) => Promise<void>;
-  getMarkers: () => Promise<MarkerRow[]>;
-  addImage: (markerId: number, uri: string) => Promise<number>;
-  deleteImage: (imageId: number) => Promise<void>;
-  getMarkerImages: (markerId: number) => Promise<MarkerImageRow[]>;
+  getMarkers: () => Promise<Marker[]>;
+  addImage: (markerId: number, uri: string) => Promise<void>;
+  deleteImage: (id: number) => Promise<void>;
+  getMarkerImages: (markerId: number) => Promise<MarkerImage[]>;
 
   isReady: boolean;
   isLoading: boolean;
   error: Error | null;
-
   retryInit: () => void;
 }
 
@@ -47,52 +49,122 @@ export const DatabaseProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     let cancelled = false;
-    setIsLoading(true);
-    setError(null);
-    setIsReady(false);
 
-    initDatabase()
-      .then((db) => {
-        if (cancelled) return;
+    const open = async () => {
+      setIsLoading(true);
+      setError(null);
+      setIsReady(false);
+
+      if (dbRef.current) {
+        await dbRef.current.closeAsync().catch((closeError) => {
+          console.error(
+            '[DB] Не удалось закрыть предыдущее соединение:',
+            closeError
+          );
+        });
+        dbRef.current = null;
+      }
+
+      try {
+        const db = await initDatabase();
+
+        if (cancelled) {
+          await db.closeAsync().catch(() => undefined);
+          return;
+        }
+
         dbRef.current = db;
         setIsReady(true);
-      })
-      .catch((err: unknown) => {
+      } catch (err: unknown) {
         if (cancelled) return;
+
         setError(
           err instanceof Error ? err : new Error('Ошибка инициализации БД')
         );
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void open();
 
     return () => {
       cancelled = true;
+
+      if (dbRef.current) {
+        dbRef.current.closeAsync().catch((closeError) => {
+          console.error('[DB] Ошибка при закрытии БД:', closeError);
+        });
+        dbRef.current = null;
+      }
     };
   }, [initAttempt]);
 
-  const requireDb = (): SQLite.SQLiteDatabase => {
+  const requireDb = useCallback((): SQLite.SQLiteDatabase => {
     if (!dbRef.current) {
       throw new Error('База данных ещё не инициализирована.');
     }
     return dbRef.current;
-  };
+  }, []);
+
+  const retryInit = useCallback(() => {
+    setInitAttempt((n) => n + 1);
+  }, []);
 
   const value = useMemo<DatabaseContextType>(
     () => ({
-      addMarker: (lat, lng) => createMarker(requireDb(), lat, lng),
-      deleteMarker: (id) => deleteMarkerById(requireDb(), id),
+      addMarker: (latitude: number, longitude: number) =>
+        createMarker(requireDb(), latitude, longitude),
+
+      deleteMarker: (id: number) => deleteMarkerById(requireDb(), id),
+
       getMarkers: () => fetchMarkers(requireDb()),
-      addImage: (markerId, uri) => createMarkerImage(requireDb(), markerId, uri),
-      deleteImage: (imageId) => deleteMarkerImageById(requireDb(), imageId),
-      getMarkerImages: (markerId) => fetchImagesForMarker(requireDb(), markerId),
+
+      addImage: async (markerId: number, uri: string) => {
+        await createMarkerImage(requireDb(), markerId, uri);
+      },
+
+      deleteImage: (id: number) => deleteMarkerImageById(requireDb(), id),
+
+      getMarkerImages: (markerId: number) =>
+        fetchImagesForMarker(requireDb(), markerId),
+
       isReady,
       isLoading,
       error,
-      retryInit: () => setInitAttempt((n) => n + 1),
+      retryInit,
+
+      addImage: async (markerId: number, uri: string) => {
+      const db = requireDb();
+      const permanentUri = await persistImage(uri);
+
+      try {
+        await createMarkerImage(db, markerId, permanentUri);
+      } catch (error) {
+        await removePersistedImage(permanentUri);
+        throw error;
+      }
+    },
+
+    deleteImage: async (id: number) => {
+      const db = requireDb();
+
+      const row = await db.getFirstAsync<{ uri: string }>(
+        'SELECT uri FROM marker_images WHERE id = ?;',
+        id
+      );
+
+      await deleteMarkerImageById(db, id);
+
+      if (row?.uri) {
+        await removePersistedImage(row.uri);
+      }
+    },
+
     }),
-    [isReady, isLoading, error]
+    [isReady, isLoading, error, requireDb, retryInit]
   );
 
   return (
@@ -104,8 +176,12 @@ export const DatabaseProvider = ({ children }: { children: ReactNode }) => {
 
 export const useDatabase = (): DatabaseContextType => {
   const ctx = useContext(DatabaseContext);
+
   if (!ctx) {
-    throw new Error('useDatabase должен использоваться внутри DatabaseProvider');
+    throw new Error(
+      'useDatabase должен использоваться внутри DatabaseProvider'
+    );
   }
+
   return ctx;
 };

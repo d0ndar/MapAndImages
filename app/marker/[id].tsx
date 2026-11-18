@@ -1,8 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { useDatabase } from '../../context/DatabaseContext';
-import { ImageList } from '../../components/ImageList';
 import {
   View,
   Text,
@@ -12,20 +10,25 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { MarkerImageRow } from '../../types';
+
+import { useDatabase } from '../../context/DatabaseContext';
+import { ImageList } from '../../components/ImageList';
+import type { MarkerImage } from '../../types';
 
 export default function MarkerDetailsScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const markerId = Number(params.id);
   const router = useRouter();
+
   const { addImage, deleteImage, getMarkerImages } = useDatabase();
 
-  const [images, setImages] = useState<MarkerImageRow[]>([]);
+  const [images, setImages] = useState<MarkerImage[]>([]);
   const [isPicking, setIsPicking] = useState(false);
   const [isLoadingImages, setIsLoadingImages] = useState(true);
 
   const loadImages = useCallback(async () => {
     if (!Number.isFinite(markerId)) return;
+
     setIsLoadingImages(true);
     try {
       const rows = await getMarkerImages(markerId);
@@ -48,8 +51,11 @@ export default function MarkerDetailsScreen() {
 
   const goBack = useCallback(() => {
     try {
-      if (router.canGoBack()) router.back();
-      else router.replace('/');
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/');
+      }
     } catch {
       Alert.alert('Ошибка навигации', 'Не удалось вернуться к карте.');
     }
@@ -57,18 +63,22 @@ export default function MarkerDetailsScreen() {
 
   const pickImage = useCallback(async () => {
     if (isPicking) return;
+
     setIsPicking(true);
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
       if (!perm.granted) {
         Alert.alert('Требуется разрешение', 'Разрешите доступ к галерее.');
         return;
       }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
         quality: 0.7,
       });
+
       if (!result.canceled && result.assets?.length) {
         await addImage(markerId, result.assets[0].uri);
         await loadImages();
@@ -123,7 +133,6 @@ export default function MarkerDetailsScreen() {
     return (
       <View style={styles.container}>
         <Text>Некорректный идентификатор маркера.</Text>
-        <Button title="Назад к карте" onPress={goBack} />
       </View>
     );
   }
@@ -134,19 +143,22 @@ export default function MarkerDetailsScreen() {
         <Text style={styles.title}>Маркер #{markerId}</Text>
       </View>
 
-      {isLoadingImages ? (
-        <ActivityIndicator />
-      ) : (
-        <ImageList images={images} onDelete={handleDelete} />
-      )}
+      <View style={styles.listContainer}>
+        {isLoadingImages ? (
+          <ActivityIndicator />
+        ) : (
+          <ImageList images={images} onDelete={handleDelete} />
+        )}
+      </View>
 
-      <View style={styles.buttons}>
+      <View style={styles.actions}>
         <Button
-          title={isPicking ? 'Загрузка...' : 'Добавить изображение'}
+          title={isPicking ? 'Выбор изображения…' : 'Добавить изображение'}
           onPress={pickImage}
           disabled={isPicking}
         />
-        <Button title="Назад к карте" onPress={goBack} />
+        <View style={styles.actionsGap} />
+        <Button title="Назад" onPress={goBack} />
       </View>
     </View>
   );
@@ -155,11 +167,13 @@ export default function MarkerDetailsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
   info: {
-    marginBottom: 16,
+    marginBottom: 12,
     padding: 12,
     backgroundColor: '#f0f0f0',
     borderRadius: 8,
   },
-  title: { fontSize: 20, fontWeight: 'bold' },
-  buttons: { marginTop: 'auto', gap: 8 },
+  title: { fontSize: 18, fontWeight: '600' },
+  listContainer: { flex: 1, marginBottom: 12 },
+  actions: { paddingTop: 8 },
+  actionsGap: { height: 8 },
 });

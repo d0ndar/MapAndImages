@@ -6,10 +6,10 @@ import {
   FlatList,
   StyleSheet,
 } from 'react-native';
-import { MarkerImageRow } from '../types';
+import type { MarkerImage } from '../types';
 
 interface ImageListProps {
-  images: MarkerImageRow[];
+  images: MarkerImage[];
   onDelete: (imageId: number) => void;
 }
 
@@ -28,6 +28,7 @@ export const ImageList = ({ images, onDelete }: ImageListProps) => (
         <TouchableOpacity
           style={styles.delete}
           onPress={() => onDelete(item.id)}
+          accessibilityLabel="Удалить изображение"
         >
           <Text style={styles.deleteText}>✕</Text>
         </TouchableOpacity>
@@ -37,9 +38,19 @@ export const ImageList = ({ images, onDelete }: ImageListProps) => (
 );
 
 const styles = StyleSheet.create({
-  list: { paddingBottom: 20 },
-  wrapper: { flex: 1, margin: 4, position: 'relative' },
-  image: { width: '100%', aspectRatio: 1, borderRadius: 8 },
+  list: {
+    paddingBottom: 20,
+  },
+  wrapper: {
+    flex: 1,
+    margin: 4,
+    position: 'relative',
+  },
+  image: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 8,
+  },
   delete: {
     position: 'absolute',
     top: 4,
@@ -51,6 +62,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  deleteText: { color: '#fff', fontWeight: 'bold' },
-  empty: { textAlign: 'center', marginTop: 20, color: '#888' },
+  deleteText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  empty: {
+    textAlign: 'center',
+    marginTop: 20,
+    color: '#888',
+  },
 });

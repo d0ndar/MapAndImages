@@ -8,17 +8,22 @@ import {
   Pressable,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+
 import { Map } from '../components/Map';
 import { useDatabase } from '../context/DatabaseContext';
-import { MarkerRow } from '../types';
+import type { Marker, MarkerData } from '../types';
 
-const INITIAL_REGION = { latitude: 55.751244, longitude: 37.618423 };
+const INITIAL_REGION = {
+  latitude: 55.751244,
+  longitude: 37.618423,
+};
 
 export default function MapScreen() {
   const router = useRouter();
   const { isReady, isLoading, error, retryInit, addMarker, getMarkers } =
     useDatabase();
-  const [markers, setMarkers] = useState<MarkerRow[]>([]);
+
+  const [markers, setMarkers] = useState<Marker[]>([]);
   const [busy, setBusy] = useState(false);
 
   const loadMarkers = useCallback(async () => {
@@ -35,13 +40,16 @@ export default function MapScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (isReady) void loadMarkers();
+      if (isReady) {
+        void loadMarkers();
+      }
     }, [isReady, loadMarkers])
   );
 
   const handleLongPress = useCallback(
     async (coord: { latitude: number; longitude: number }) => {
       if (busy) return;
+
       setBusy(true);
       try {
         await addMarker(coord.latitude, coord.longitude);
@@ -63,16 +71,28 @@ export default function MapScreen() {
       try {
         router.push(`/marker/${id}`);
       } catch {
-        Alert.alert('Ошибка навигации', 'Не удалось открыть экран деталей.');
+        Alert.alert(
+          'Ошибка навигации',
+          'Не удалось открыть экран деталей.'
+        );
       }
     },
     [router]
   );
 
+  const mapMarkers: MarkerData[] = markers.map((marker) => ({
+    id: String(marker.id),
+    coordinate: {
+      latitude: marker.latitude,
+      longitude: marker.longitude,
+    },
+    title: `Маркер #${marker.id}`,
+  }));
+
   if (isLoading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator />
+        <ActivityIndicator size="large" />
         <Text>Инициализация базы данных…</Text>
       </View>
     );
@@ -82,7 +102,7 @@ export default function MapScreen() {
     return (
       <View style={styles.center}>
         <Text>Не удалось открыть базу данных: {error.message}</Text>
-        <Pressable onPress={retryInit} style={styles.retryBtn}>
+        <Pressable style={styles.retryBtn} onPress={retryInit}>
           <Text style={styles.retryText}>Повторить</Text>
         </Pressable>
       </View>
@@ -92,16 +112,16 @@ export default function MapScreen() {
   return (
     <View style={styles.container}>
       <Map
-        markers={markers.map((m) => ({
-          id: String(m.id),
-          coordinate: { latitude: m.latitude, longitude: m.longitude },
-          title: `Маркер #${m.id}`,
-        }))}
+        markers={mapMarkers}
         initialRegion={INITIAL_REGION}
         onLongPress={handleLongPress}
         onMarkerPress={handleMarkerPress}
       />
-      {busy && <ActivityIndicator style={styles.overlay} />}
+      {busy && (
+        <View style={styles.overlay}>
+          <ActivityIndicator />
+        </View>
+      )}
     </View>
   );
 }

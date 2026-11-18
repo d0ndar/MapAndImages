@@ -1,17 +1,9 @@
-import { MarkerData } from '../types';
+import type { LeafletMarker, MarkerData } from '../types';
 
-export interface LeafletMarker {
-  id: string;
-  latitude: number;
-  longitude: number;
-  title?: string;
-}
-
-// Преобразует MarkerData[] в формат, который ждёт window.setMarkers в HTML
 export const serializeMarkers = (markers: MarkerData[]): LeafletMarker[] =>
-  markers.map((m) => ({
-    id: m.id,
-    latitude: m.coordinate.latitude,
-    longitude: m.coordinate.longitude,
-    title: m.title,
+  markers.map((marker) => ({
+    id: marker.id,
+    latitude: marker.coordinate.latitude,
+    longitude: marker.coordinate.longitude,
+    title: marker.title,
   }));

@@ -1,10 +1,16 @@
 import * as SQLite from 'expo-sqlite';
-import { MarkerRow, MarkerImageRow } from '../types';
+import type { Marker, MarkerImage } from '../types';
 
 const log = (...args: unknown[]) => {
-  if (__DEV__) console.log('[DB]', ...args);
+  if (__DEV__) {
+    console.log('[DB]', ...args);
+  }
 };
 
+function toError(error: unknown, fallback: string): Error {
+  if (error instanceof Error) return error;
+  return new Error(fallback);
+}
 
 export async function createMarker(
   db: SQLite.SQLiteDatabase,
@@ -17,11 +23,12 @@ export async function createMarker(
       latitude,
       longitude
     );
+
     log('createMarker', result.lastInsertRowId);
     return result.lastInsertRowId;
   } catch (error) {
     console.error('[DB] createMarker failed:', error);
-    throw new Error('Не удалось создать маркер.');
+    throw toError(error, 'Не удалось создать маркер.');
   }
 }
 
@@ -31,36 +38,45 @@ export async function deleteMarkerById(
 ): Promise<void> {
   try {
     await db.withTransactionAsync(async () => {
-      const res = await db.runAsync(
+      await db.runAsync(
+        'DELETE FROM marker_images WHERE marker_id = ?;',
+        markerId
+      );
+
+      const result = await db.runAsync(
         'DELETE FROM markers WHERE id = ?;',
         markerId
       );
-      if (res.changes === 0) throw new Error('Маркер не найден.');
+
+      if (result.changes === 0) {
+        throw new Error('Маркер не найден.');
+      }
     });
+
     log('deleteMarkerById', markerId);
   } catch (error) {
     console.error('[DB] deleteMarkerById failed:', error);
-    throw error instanceof Error
-      ? error
-      : new Error('Не удалось удалить маркер.');
+    throw toError(error, 'Не удалось удалить маркер.');
   }
 }
 
 export async function fetchMarkers(
   db: SQLite.SQLiteDatabase
-): Promise<MarkerRow[]> {
+): Promise<Marker[]> {
   try {
-    const rows = await db.getAllAsync<MarkerRow>(
-      'SELECT id, latitude, longitude, created_at FROM markers ORDER BY created_at DESC;'
+    const rows = await db.getAllAsync<Marker>(
+      `SELECT id, latitude, longitude, created_at
+       FROM markers
+       ORDER BY created_at DESC;`
     );
+
     log('fetchMarkers', rows.length);
     return rows;
   } catch (error) {
     console.error('[DB] fetchMarkers failed:', error);
-    throw new Error('Не удалось загрузить маркеры.');
+    throw toError(error, 'Не удалось загрузить маркеры.');
   }
 }
-
 
 export async function createMarkerImage(
   db: SQLite.SQLiteDatabase,
@@ -68,16 +84,26 @@ export async function createMarkerImage(
   uri: string
 ): Promise<number> {
   try {
+    const marker = await db.getFirstAsync<{ id: number }>(
+      'SELECT id FROM markers WHERE id = ?;',
+      markerId
+    );
+
+    if (!marker) {
+      throw new Error('Маркер не найден.');
+    }
+
     const result = await db.runAsync(
       'INSERT INTO marker_images (marker_id, uri) VALUES (?, ?);',
       markerId,
       uri
     );
+
     log('createMarkerImage', result.lastInsertRowId);
     return result.lastInsertRowId;
   } catch (error) {
     console.error('[DB] createMarkerImage failed:', error);
-    throw new Error('Не удалось добавить изображение.');
+    throw toError(error, 'Не удалось добавить изображение.');
   }
 }
 
@@ -86,33 +112,39 @@ export async function deleteMarkerImageById(
   imageId: number
 ): Promise<void> {
   try {
-    const res = await db.runAsync(
+    const result = await db.runAsync(
       'DELETE FROM marker_images WHERE id = ?;',
       imageId
     );
-    if (res.changes === 0) throw new Error('Изображение не найдено.');
+
+    if (result.changes === 0) {
+      throw new Error('Изображение не найдено.');
+    }
+
     log('deleteMarkerImageById', imageId);
   } catch (error) {
     console.error('[DB] deleteMarkerImageById failed:', error);
-    throw error instanceof Error
-      ? error
-      : new Error('Не удалось удалить изображение.');
+    throw toError(error, 'Не удалось удалить изображение.');
   }
 }
 
 export async function fetchImagesForMarker(
   db: SQLite.SQLiteDatabase,
   markerId: number
-): Promise<MarkerImageRow[]> {
+): Promise<MarkerImage[]> {
   try {
-    const rows = await db.getAllAsync<MarkerImageRow>(
-      'SELECT id, marker_id, uri, created_at FROM marker_images WHERE marker_id = ? ORDER BY created_at ASC;',
+    const rows = await db.getAllAsync<MarkerImage>(
+      `SELECT id, marker_id, uri, created_at
+       FROM marker_images
+       WHERE marker_id = ?
+       ORDER BY created_at ASC;`,
       markerId
     );
+
     log('fetchImagesForMarker', markerId, rows.length);
     return rows;
   } catch (error) {
     console.error('[DB] fetchImagesForMarker failed:', error);
-    throw new Error('Не удалось загрузить изображения маркера.');
+    throw toError(error, 'Не удалось загрузить изображения маркера.');
   }
 }
